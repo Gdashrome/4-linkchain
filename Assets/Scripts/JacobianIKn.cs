@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 public class JacobianIKn : MonoBehaviour
 {
@@ -21,6 +22,7 @@ public class JacobianIKn : MonoBehaviour
     public float damping = 0.1f;
     float angleOffset = Mathf.PI / 2f;
     bool isSolving = true;
+    bool isSolvingAngle = false;
     private int currentIteration = 0;
     Vector2 lastTargetPos;
     float maxReach;
@@ -61,7 +63,7 @@ public class JacobianIKn : MonoBehaviour
     {
         Vector2 currentTarget = target.position;
 
-        if ((currentTarget - lastTargetPos).magnitude > 0.001f)
+        if ((currentTarget - lastTargetPos).magnitude > tolerance)
         {
             isSolving = true;
             currentIteration = 0;
@@ -73,9 +75,13 @@ public class JacobianIKn : MonoBehaviour
 
         if (!isSolving) return;
 
-        ReadAnglesFromTransforms();
-        SolveIKStep();
-        ApplyAnglesToTransforms();
+        if (!isSolvingAngle)
+        {
+            ReadAnglesFromTransforms();
+            SolveIKStep();
+        }
+        else
+            ApplyAnglesToTransforms();
     }
 
     void UpdateLengths()
@@ -103,23 +109,38 @@ public class JacobianIKn : MonoBehaviour
 
     void ApplyAnglesToTransforms()
     {
+        bool allDone = true;
         for (int i = 0; i < joints.Length; i++)
         {
             Vector3 rot = joints[i].localEulerAngles;
-            rot.z = angles[i] * Mathf.Rad2Deg;
-            joints[i].localEulerAngles = rot;
+            if (Mathf.Abs(rot.z - angles[i] * Mathf.Rad2Deg)%360 == 0)
+            {
+                print(rot.z);
+                print(angles[i] - Mathf.Rad2Deg);
+                print(rot.z - angles[i] * Mathf.Rad2Deg);
+                print((rot.z - angles[i] * Mathf.Rad2Deg)%360);
+                rot.z = angles[i] * Mathf.Rad2Deg;
+                joints[i].localEulerAngles = rot;
+            }
+            else
+            {
+                rot.z = Mathf.LerpAngle(rot.z, angles[i] * Mathf.Rad2Deg, stepSize);
+                joints[i].localEulerAngles = rot;
+                allDone = false;
+            }
         }
+        isSolvingAngle = !allDone;
     }
 
     void ExtendTowardsTarget(Vector2 direction)
     {
         float targetAngle = Mathf.Atan2(direction.y, direction.x) - angleOffset;
 
-        angles[0] = Mathf.LerpAngle(angles[0] * Mathf.Rad2Deg, targetAngle * Mathf.Rad2Deg, 0.1f) * Mathf.Deg2Rad;
+        angles[0] = (targetAngle * Mathf.Rad2Deg) * Mathf.Deg2Rad;
 
         for (int i = 1; i < angles.Length; i++)
         {
-            angles[i] = Mathf.Lerp(angles[i], 0f, 0.1f);
+            angles[i] = 0f;
         }
     }
 
@@ -224,7 +245,9 @@ public class JacobianIKn : MonoBehaviour
         totalIterations++;
 
         for (int i = 0; i < angles.Length; i++)
-            angles[i] += stepSize * delta[i];
+            angles[i] += delta[i];
+
+        isSolvingAngle = true;
 
         currentIteration++;
     }

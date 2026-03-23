@@ -949,7 +949,7 @@ MonoBehaviour:
   endEffector: {fileID: 100398674}
   target: {fileID: 15230983}
   form: 1
-  method: 1
+  method: 0
   maxIterations: 200
   tolerance: 0.001
   stepSize: 1
