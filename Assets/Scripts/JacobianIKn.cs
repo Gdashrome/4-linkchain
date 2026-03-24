@@ -4,8 +4,13 @@ using System.Threading.Tasks;
 
 public class JacobianIKn : MonoBehaviour
 {
-    public enum InverseForm {Transpose, SVD}
-    public enum IKMethod {PseudoInverse, DampedLeastSquares}
+    public enum IKMethod {
+        TransposeNormal,
+        TransposePseudoInverse,
+        TransposeDampedLeastSquares,
+        SVDPseudoInverse,
+        SVDDampedLeastSquares
+    } 
 
     [Header("Scene References")]
     public Transform[] joints;
@@ -13,17 +18,23 @@ public class JacobianIKn : MonoBehaviour
     public Transform target;
 
     [Header("IK Settings")]
-    public InverseForm form = InverseForm.Transpose;
-    public IKMethod method = IKMethod.PseudoInverse;
+    public IKMethod method = IKMethod.TransposeNormal;
+
+    public bool randomOrientation = false;
+    public bool randomTarget = false;
 
     public int maxIterations = 20;
-    public float tolerance = 0.001f;
-    public float stepSize = 0.1f;
-    public float damping = 0.1f;
+
+    [Range(0.001f, 1f)]
+    public float tolerance = 0.1f;
+    [Range(0.01f, 1f)]
+    public float stepSize = 0.01f;
+    [Range(0f, 5f)]
+    public float damping = 2f;
+
     float angleOffset = Mathf.PI / 2f;
     bool isSolving = true;
     bool isSolvingAngle = false;
-    private int currentIteration = 0;
     Vector2 lastTargetPos;
     float maxReach;
 
@@ -31,28 +42,46 @@ public class JacobianIKn : MonoBehaviour
     private int totalIterations = 0;
 
     float[] angles;
+    float[] startingAngles;
+    float[] targetAngles;
     float[] lengths;
+    float[,] J;
 
     void Start()
     {
         int n = joints.Length;
         angles = new float[n];
+        startingAngles = new float[n];
+        targetAngles = new float[n];
         lengths = new float[n];
+        J = new float[2, n];
 
         UpdateLengths();
         ReadAnglesFromTransforms();
+
+        if (randomOrientation)
+        {
+            for (int i = 0; i < angles.Length; i++)
+                angles[i] += Random.Range(-Mathf.PI, Mathf.PI);
+            ApplyAnglesToTransforms();
+        }
+
+        startingAngles = (float[])angles.Clone();
 
         maxReach = 0f;
         for (int i = 0; i < lengths.Length; i++)
             maxReach += lengths[i];
         
-        if (method == IKMethod.PseudoInverse)
-        {
-            for (int i = 0; i < angles.Length; i++)
-                angles[i] += Random.Range(-0.01f, 0.01f);
-            ApplyAnglesToTransforms();
-        }
+        SolveIKStep();
+        resetRig();
 
+        if (randomTarget)
+        {
+            Vector2 randomDir = Random.insideUnitCircle.normalized;
+            float randomDist = Random.Range(0.5f * maxReach, 0.9f * maxReach);
+            target.position = (Vector2)joints[0].position + randomDir * randomDist;
+        }
+        
         print("Initial End Effector: " + ForwardKinematics(angles));
         print("Target Position: " + target.position);
         print("Intial Lengths: " + string.Join(", ", lengths));
@@ -66,7 +95,6 @@ public class JacobianIKn : MonoBehaviour
         if ((currentTarget - lastTargetPos).magnitude > tolerance)
         {
             isSolving = true;
-            currentIteration = 0;
             lastTargetPos = currentTarget;
 
             algorithmTime = 0f;
@@ -77,13 +105,17 @@ public class JacobianIKn : MonoBehaviour
 
         if (!isSolvingAngle)
         {
-            ReadAnglesFromTransforms();
             SolveIKStep();
         }
         else
-            ApplyAnglesToTransforms();
+            ApplyAnglesSmooth();
     }
 
+    void resetRig()
+    {
+        angles = (float[])startingAngles.Clone();
+        ApplyAnglesToTransforms();
+    }
     void UpdateLengths()
     {
         for (int i = 0; i < joints.Length; i++)
@@ -103,46 +135,58 @@ public class JacobianIKn : MonoBehaviour
         {
             float a = joints[i].localEulerAngles.z * Mathf.Deg2Rad;
             if (a > Mathf.PI) a -= 2 * Mathf.PI;
+            targetAngles[i] = a;
             angles[i] = a;
         }
     }
 
     void ApplyAnglesToTransforms()
     {
-        bool allDone = true;
         for (int i = 0; i < joints.Length; i++)
         {
             Vector3 rot = joints[i].localEulerAngles;
-            if (Mathf.Abs(rot.z - angles[i] * Mathf.Rad2Deg)%360 == 0)
-            {
-                print(rot.z);
-                print(angles[i] - Mathf.Rad2Deg);
-                print(rot.z - angles[i] * Mathf.Rad2Deg);
-                print((rot.z - angles[i] * Mathf.Rad2Deg)%360);
-                rot.z = angles[i] * Mathf.Rad2Deg;
-                joints[i].localEulerAngles = rot;
-            }
-            else
-            {
-                rot.z = Mathf.LerpAngle(rot.z, angles[i] * Mathf.Rad2Deg, stepSize);
-                joints[i].localEulerAngles = rot;
-                allDone = false;
-            }
+            rot.z = angles[i] * Mathf.Rad2Deg;
+            joints[i].localEulerAngles = rot;
         }
-        isSolvingAngle = !allDone;
+        isSolvingAngle = false;
+    }
+
+    void ApplyAnglesSmooth() 
+    {
+        bool done = true;
+
+        for (int i = 0; i < joints.Length; i++)
+        {
+            float current = angles[i] * Mathf.Rad2Deg;
+            float target = targetAngles[i] * Mathf.Rad2Deg;
+
+            float newAngle = Mathf.LerpAngle(current, target, stepSize);
+
+            joints[i].localEulerAngles = new Vector3(0, 0, newAngle);
+
+            angles[i] = newAngle * Mathf.Deg2Rad;
+
+            if (Mathf.Abs(Mathf.DeltaAngle(current, target)) > 0.15)
+                done = false;
+            else
+                angles[i] = targetAngles[i];
+        }
+
+        isSolvingAngle = !done;
     }
 
     void ExtendTowardsTarget(Vector2 direction)
     {
         float targetAngle = Mathf.Atan2(direction.y, direction.x) - angleOffset;
 
-        angles[0] = (targetAngle * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+        angles[0] = Mathf.LerpAngle(angles[0] * Mathf.Rad2Deg, targetAngle * Mathf.Rad2Deg, stepSize) * Mathf.Deg2Rad;
 
         for (int i = 1; i < angles.Length; i++)
         {
-            angles[i] = 0f;
+            angles[i] = Mathf.Lerp(angles[i], 0f, stepSize);
         }
     }
+
 
     Vector2 ForwardKinematics(float[] theta)
     {
@@ -160,10 +204,9 @@ public class JacobianIKn : MonoBehaviour
         return new Vector2(x, y);
     }
 
-    float[,] ComputeJacobian(float[] theta)
+    void ComputeJacobian(float[] theta)
     {
         int n = theta.Length;
-        float[,] J = new float[2, n];
 
         for (int j = 0; j < n; j++)
         {
@@ -185,23 +228,25 @@ public class JacobianIKn : MonoBehaviour
             J[0, j] = dx;
             J[1, j] = dy;
         }
-
-        return J;
     }
 
     void SolveIKStep()
     {
         Vector2 current = ForwardKinematics(angles);
         Vector2 rootPos = joints[0].position;
-        Vector2 goal = target.position;
+        Vector2 targetPos = target.position;
 
-        Vector2 error = goal - current;
-        Vector2 toTarget = goal - rootPos;
+        Vector2 error = targetPos - current;
+        Vector2 toTarget = targetPos - rootPos;
         float roottoTargetDistance = toTarget.magnitude;
+        
+        print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Time: " + algorithmTime + "s");
 
         if (roottoTargetDistance > maxReach)
         {
             ExtendTowardsTarget(toTarget.normalized);
+            ApplyAnglesToTransforms();
+
             return;
         }
 
@@ -212,7 +257,7 @@ public class JacobianIKn : MonoBehaviour
             return;
         }
 
-        if (currentIteration >= maxIterations)
+        if (totalIterations >= maxIterations)
         {
             isSolving = false;
             UnityEngine.Debug.Log("Max iterations reached (" + maxIterations + "), no convergent solution. Algorithm time: " + algorithmTime + "s");
@@ -221,35 +266,81 @@ public class JacobianIKn : MonoBehaviour
 
         Stopwatch sw = Stopwatch.StartNew();
 
-        float[,] J = ComputeJacobian(angles);
+        ComputeJacobian(angles);
 
         float[] delta;
 
-        if (form == InverseForm.SVD)
+        if (method == IKMethod.TransposeNormal)
         {
-            if (method == IKMethod.DampedLeastSquares)
-                delta = SolveDLS_SVD(J, error);
-            else
-                delta = SolvePseudoInverse_SVD(J, error);
+            delta = SolveJacobianTranspose(J, error);
         }
-        else
+        else if (method == IKMethod.TransposePseudoInverse)
         {
-            if (method == IKMethod.DampedLeastSquares)
-                delta = SolveDLS(J, error);
-            else
-                delta = SolvePseudoInverse(J, error);  
+            delta = SolvePseudoInverse(J, error);
         }
-        
+        else if (method == IKMethod.TransposeDampedLeastSquares)
+        {
+            delta = SolveDLS(J, error);
+        }
+        else if (method == IKMethod.SVDPseudoInverse)
+        {
+            delta = SolvePseudoInverse_SVD(J, error);
+        }
+        else if (method == IKMethod.SVDDampedLeastSquares)
+        {
+            delta = SolveDLS_SVD(J, error);
+        }
+        else {
+            print("Unknown IK method selected.");
+            return;
+        }
+
         sw.Stop();
         algorithmTime += (float)sw.Elapsed.TotalSeconds;
         totalIterations++;
 
         for (int i = 0; i < angles.Length; i++)
-            angles[i] += delta[i];
+        {
+            targetAngles[i] = angles[i] + delta[i];
+        }  
 
         isSolvingAngle = true;
+    }
 
-        currentIteration++;
+    float[] SolveJacobianTranspose(float[,] J, Vector2 error)
+    {
+        int n = J.GetLength(1);
+
+        float[,] JJt = new float[2, 2];
+
+        for (int j = 0; j < n; j++)
+        {
+            JJt[0,0] += J[0,j] * J[0,j];
+            JJt[0,1] += J[0,j] * J[1,j];
+            JJt[1,0] += J[1,j] * J[0,j];
+            JJt[1,1] += J[1,j] * J[1,j];
+        }
+
+        Vector2 w = new Vector2(
+            JJt[0,0] * error.x + JJt[0,1] * error.y,
+            JJt[1,0] * error.x + JJt[1,1] * error.y
+        );
+
+        float numerator = Vector2.Dot(error, w);
+        float denominator = Vector2.Dot(w, w);
+
+        float alpha = 0f;
+        if (denominator > 1e-8f)
+            alpha = numerator / denominator;
+
+        float[] delta = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float jt_e = J[0,i] * error.x + J[1,i] * error.y;
+            delta[i] = alpha * jt_e;
+        }
+
+        return delta;
     }
 
     float[] SolvePseudoInverse(float[,] J, Vector2 error)
