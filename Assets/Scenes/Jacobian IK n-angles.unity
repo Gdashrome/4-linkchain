@@ -161,14 +161,13 @@ MonoBehaviour:
   - {fileID: 1768396054}
   endEffector: {fileID: 1310393132}
   target: {fileID: 1606035656}
-  form: 1
-  method: 0
+  method: 5
   randomOrientation: 0
-  randomTarget: 1
+  randomTarget: 0
   maxIterations: 1000
-  tolerance: 0.01
+  tolerance: 0.1
   stepSize: 0.01
-  damping: 0.7
+  damping: 2
 --- !u!4 &132509092
 Transform:
   m_ObjectHideFlags: 0
@@ -2173,7 +2172,7 @@ Transform:
   m_GameObject: {fileID: 1606035655}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -27.58, y: 12.92, z: 0}
+  m_LocalPosition: {x: 36, y: 12, z: 0}
   m_LocalScale: {x: 1.5, y: 1.5, z: 1.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
