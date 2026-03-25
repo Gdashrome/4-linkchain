@@ -1,5 +1,9 @@
 using UnityEngine;
 using System.Diagnostics;
+using System.Collections.Generic;
+using System.Linq;
+using System.Data;
+using JetBrains.Annotations;
 
 public class FABRIK_IKn : MonoBehaviour
 {
@@ -28,7 +32,10 @@ public class FABRIK_IKn : MonoBehaviour
     float totalLength;
 
     private float algorithmTime = 0f;
+    private float iterationTime = 0f;
     private int totalIterations = 0;
+    private List<IKRawData> rawData = new List<IKRawData>();
+    private List<IKShortData> shortData = new List<IKShortData>();
 
     void Start()
     {   
@@ -44,6 +51,9 @@ public class FABRIK_IKn : MonoBehaviour
 
         algorithmTime = 0f;
         totalIterations = 0;
+        iterationTime = 0f;
+        rawData = new List<IKRawData>();
+        shortData = new List<IKShortData>();
         UpdatePositions();
 
         for (int i = 0; i < lengths.Length; i++)
@@ -68,7 +78,12 @@ public class FABRIK_IKn : MonoBehaviour
             algorithmTime = 0f;
         }
 
-        if (!isSolving) return;   
+        if (!isSolving)
+        {
+            
+            return;
+        }    
+           
     
         if (baseToTargetDistance > totalLength)
         {
@@ -123,10 +138,23 @@ public class FABRIK_IKn : MonoBehaviour
     {
         float error = Vector2.Distance(positions[positions.Length - 1], target.position);
 
-         if (error < tolerance)
+        print("Iteration " + totalIterations + ", Error: " + error + ", Iteration Time: " + iterationTime + ", Total Time: " + algorithmTime + "s");
+        rawData.Add(new IKRawData(1, totalIterations, iterationTime, algorithmTime, error));
+
+        if (error < tolerance)
         {
             isSolving = false;
             UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
+            shortData.Add(new IKShortData(1, totalIterations, algorithmTime/totalIterations, algorithmTime, error));
+            foreach (IKRawData data in rawData)
+            {
+                print("Test Number: " + data.testNum + ", Iteration: " + data.iteration + ", Iteration Time: " + data.iterationTime + ", Elapsed Time: " + data.elapsedIterationTime + ", Iteration Error: " + data.iterationError);
+            }
+            for (int i = 0; i < shortData.Count; i++)
+            {
+                IKShortData data = shortData[i];
+                print("Test Number: " + data.testNum + ", Iterations: " + data.iterations + ", Average Iteration Time: " + data.averageIterationTime + ", Total Time: " + data.totalIterationTime + ", Iteration Error: " + data.finalError);
+            }
             return;
         }
 
@@ -140,11 +168,9 @@ public class FABRIK_IKn : MonoBehaviour
         Stopwatch sw = Stopwatch.StartNew();
         SolveFABRIK();
         sw.Stop();
-        algorithmTime += (float)sw.Elapsed.TotalSeconds;
+        iterationTime = (float)sw.Elapsed.TotalSeconds;
+        algorithmTime += iterationTime;
         totalIterations++;
-
-        error = Vector2.Distance(positions[positions.Length - 1], target.position);
-        print("Iteration " + totalIterations + ", Error: " + error + ", Iteration Time: " + (float)sw.Elapsed.TotalSeconds + ", Total Time: " + algorithmTime + "s");
     }
 
     void SolveFABRIK()
