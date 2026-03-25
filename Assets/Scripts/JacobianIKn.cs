@@ -73,6 +73,8 @@ public class JacobianIKn : MonoBehaviour
             maxReach += lengths[i];
         
         SolveIKStep();
+        algorithmTime = 0f;
+        totalIterations = 0;
         resetRig();
 
         if (randomTarget)
@@ -239,8 +241,6 @@ public class JacobianIKn : MonoBehaviour
         Vector2 error = targetPos - current;
         Vector2 toTarget = targetPos - rootPos;
         float roottoTargetDistance = toTarget.magnitude;
-        
-        print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Time: " + algorithmTime + "s");
 
         if (roottoTargetDistance > maxReach)
         {
@@ -253,7 +253,7 @@ public class JacobianIKn : MonoBehaviour
         if (error.magnitude < tolerance)
         {
             isSolving = false;
-            UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, algorithm time: " + algorithmTime + "s");
+            UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error.magnitude + ", algorithm time: " + algorithmTime + "s");
             return;
         }
 
@@ -298,6 +298,9 @@ public class JacobianIKn : MonoBehaviour
         sw.Stop();
         algorithmTime += (float)sw.Elapsed.TotalSeconds;
         totalIterations++;
+
+        error = targetPos - current;
+        print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Iteration Time: " + (float)sw.Elapsed.TotalSeconds + ", Total Time: " + algorithmTime + "s");
 
         for (int i = 0; i < angles.Length; i++)
         {
