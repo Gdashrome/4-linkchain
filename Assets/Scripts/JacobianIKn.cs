@@ -80,7 +80,7 @@ public class JacobianIKn : MonoBehaviour
         if (randomTarget)
         {
             Vector2 randomDir = Random.insideUnitCircle.normalized;
-            float randomDist = Random.Range(0.5f * maxReach, 0.9f * maxReach);
+            float randomDist = Random.Range(0f, maxReach);
             target.position = (Vector2)joints[0].position + randomDir * randomDist;
         }
         

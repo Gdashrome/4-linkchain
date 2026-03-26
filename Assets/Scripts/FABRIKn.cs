@@ -12,22 +12,34 @@ public class FABRIK_IKn : MonoBehaviour
     public Transform target;
 
     [Header("FABRIK Settings")]
+    public bool randomOrientation = false;
+    public bool randomTarget = false;
     public int maxIterations = 20;
 
     [Range(0.001f, 1f)]
     public float tolerance = 0.1f;
     [Range(0.01f, 1f)]
     public float stepSize = 0.01f;
-    [Range(0f, 5f)]
+    
+    [Header("Data Collection")]
+    [Range(1, 100)]
+    public int maxTestNum = 1;
+    public bool collectData = false;
+    
+    int testNum = 1;
 
     float angleOffset = Mathf.PI / 2f;
 
-    bool isSolving = true;
+    bool isSolving = false;
+
     
     float[] lengths;
     Vector3[] positions;
     Vector3 lastTargetPos;
     Vector2 basePosition;
+
+    Vector3[] originalRotations;
+    Vector3 originalTargetPosition;
 
     float totalLength;
 
@@ -45,7 +57,32 @@ public class FABRIK_IKn : MonoBehaviour
         basePosition = joints[0].position;
 
         UpdateLengths();
+        for (int i = 0; i < lengths.Length; i++)
+            totalLength += lengths[i];
+
+        if (randomOrientation)
+        {
+            for (int i = 0; i < joints.Length; i++)
+            {
+                float randomAngle = Random.Range(0f, 360f);
+                joints[i].eulerAngles = new Vector3(0, 0, randomAngle);
+            }
+        }
+
+        if (randomTarget)
+        {
+            Vector2 randomDir = Random.insideUnitCircle.normalized;
+            float randomDist = Random.Range(0f, totalLength);
+            target.position = (Vector2)joints[0].position + randomDir * randomDist;
+        }
+
         UpdatePositions();
+        
+        originalRotations = new Vector3[joints.Length];
+        for (int i = 0; i < joints.Length; i++)
+            originalRotations[i] = joints[i].eulerAngles;
+
+        originalTargetPosition = target.position;
 
         SolveIKStep();
 
@@ -55,9 +92,6 @@ public class FABRIK_IKn : MonoBehaviour
         rawData = new List<IKRawData>();
         shortData = new List<IKShortData>();
         UpdatePositions();
-
-        for (int i = 0; i < lengths.Length; i++)
-            totalLength += lengths[i];
         
         print($"Total arm length: {totalLength}");
         print($"Initial error: {Vector2.Distance(positions[positions.Length - 1], target.position)}");
@@ -73,14 +107,41 @@ public class FABRIK_IKn : MonoBehaviour
         {
             isSolving = true;
             lastTargetPos = target.position;
-
             totalIterations = 0;
             algorithmTime = 0f;
         }
 
         if (!isSolving)
         {
-            
+            if (testNum <= maxTestNum && collectData)
+            {
+                algorithmTime = 0f;
+                totalIterations = 0;
+                iterationTime = 0f;
+
+                target.position = originalTargetPosition;
+                for (int i = 0; i < joints.Length; i++)
+                    joints[i].eulerAngles = originalRotations[i];
+                
+                if (randomOrientation)
+                {
+                    for (int i = 0; i < joints.Length; i++)
+                    {
+                        float randomAngle = Random.Range(0f, 360f);
+                        joints[i].eulerAngles = new Vector3(0, 0, randomAngle);
+                    }
+                }
+                if (randomTarget)
+                {
+                    Vector2 randomDir = Random.insideUnitCircle.normalized;
+                    float randomDist = Random.Range(0f, totalLength);
+                    target.position = (Vector2)joints[0].position + randomDir * randomDist;
+                }
+
+                lastTargetPos = target.position;
+                UpdatePositions();
+                isSolving = true;
+            }
             return;
         }    
            
@@ -120,7 +181,7 @@ public class FABRIK_IKn : MonoBehaviour
         {
             Vector3 dir = positions[i + 1] - positions[i];
             float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-            joints[i].rotation = Quaternion.Euler(0, 0, angle - angleOffset * Mathf.Rad2Deg);
+            joints[i].eulerAngles = new Vector3(0, 0, angle - angleOffset * Mathf.Rad2Deg);
         }
     }
 
@@ -138,22 +199,58 @@ public class FABRIK_IKn : MonoBehaviour
     {
         float error = Vector2.Distance(positions[positions.Length - 1], target.position);
 
-        print("Iteration " + totalIterations + ", Error: " + error + ", Iteration Time: " + iterationTime + ", Total Time: " + algorithmTime + "s");
-        rawData.Add(new IKRawData(1, totalIterations, iterationTime, algorithmTime, error));
+        rawData.Add(new IKRawData(testNum, totalIterations, iterationTime, algorithmTime, error));
 
         if (error < tolerance)
         {
             isSolving = false;
             UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
-            shortData.Add(new IKShortData(1, totalIterations, algorithmTime/totalIterations, algorithmTime, error));
-            foreach (IKRawData data in rawData)
+            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, error));
+            testNum++;
+
+            if (testNum > maxTestNum && collectData)
             {
-                print("Test Number: " + data.testNum + ", Iteration: " + data.iteration + ", Iteration Time: " + data.iterationTime + ", Elapsed Time: " + data.elapsedIterationTime + ", Iteration Error: " + data.iterationError);
-            }
-            for (int i = 0; i < shortData.Count; i++)
-            {
-                IKShortData data = shortData[i];
-                print("Test Number: " + data.testNum + ", Iterations: " + data.iterations + ", Average Iteration Time: " + data.averageIterationTime + ", Total Time: " + data.totalIterationTime + ", Iteration Error: " + data.finalError);
+                string rawDataFileNameBase = "FABRIK_IK_RawData";
+                string shortDataFileNameBase = "FABRIK_IK_SummaryData";
+                string rawDataFileNameComponent;
+                string shortDataFileNameComponent;
+                string timestamp = System.DateTime.Now.ToString("(yyyy-MM-dd_HH-mm-ss)");
+                string toleranceStr = "(Tolerance=" + tolerance.ToString("F3") + ")";
+                if (randomOrientation && randomTarget)
+                {   
+                    rawDataFileNameComponent = "(Random Orientation and Target)";
+                    shortDataFileNameComponent = "(Random Orientation and Target)";
+                }
+                else if (randomOrientation)
+                {
+                    rawDataFileNameComponent = "(Random Orientation)";
+                    shortDataFileNameComponent = "(Random Orientation)";
+                }
+                else if (randomTarget)
+                {
+                    rawDataFileNameComponent = "(Random Target)";
+                    shortDataFileNameComponent = "(Random Target)";
+                }
+                else
+                {
+                    rawDataFileNameComponent = "(Preset Orientation and Target)";
+                    shortDataFileNameComponent = "(Preset Orientation and Target)";
+                }
+                
+                string rawDataFileName = rawDataFileNameBase + "_" + rawDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+                string shortDataFileName = shortDataFileNameBase + "_" + shortDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+
+                CSVWriter.WriteRawData(rawDataFileName, rawData);
+                CSVWriter.WriteShortData(shortDataFileName, shortData);
+
+                // foreach (IKRawData data in rawData)
+                // {
+                //     print("Test Number: " + data.testNum + ", Iteration: " + data.iteration + ", Iteration Time: " + data.iterationTime + ", Elapsed Time: " + data.elapsedIterationTime + ", Iteration Error: " + data.iterationError);
+                // }
+                // foreach (IKShortData data in shortData)
+                // {
+                //     print("Test Number: " + data.testNum + ", Iterations: " + data.iterations + ", Average Iteration Time: " + data.averageIterationTime + ", Total Time: " + data.totalIterationTime + ", Iteration Error: " + data.finalError);
+                // }
             }
             return;
         }
