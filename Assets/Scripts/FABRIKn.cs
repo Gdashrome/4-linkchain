@@ -18,11 +18,11 @@ public class FABRIK_IKn : MonoBehaviour
 
     [Range(0.001f, 1f)]
     public float tolerance = 0.1f;
-    [Range(0.01f, 1f)]
+    [Range(0.005f, 1f)]
     public float stepSize = 0.01f;
     
     [Header("Data Collection")]
-    [Range(1, 100)]
+    [Range(1, 1000)]
     public int maxTestNum = 1;
     public bool collectData = false;
     
@@ -31,6 +31,7 @@ public class FABRIK_IKn : MonoBehaviour
     float angleOffset = Mathf.PI / 2f;
 
     bool isSolving = false;
+    bool isSolvingAngle = false;
 
     
     float[] lengths;
@@ -38,6 +39,8 @@ public class FABRIK_IKn : MonoBehaviour
     Vector3 lastTargetPos;
     Vector2 basePosition;
 
+    float[] angles;
+    float[] targetAngles;
     Vector3[] originalRotations;
     Vector3 originalTargetPosition;
 
@@ -55,6 +58,8 @@ public class FABRIK_IKn : MonoBehaviour
         lengths = new float[n - 1];
         positions = new Vector3[n];
         basePosition = joints[0].position;
+        angles = new float[n - 1];
+        targetAngles = new float[n - 1];
 
         UpdateLengths();
         for (int i = 0; i < lengths.Length; i++)
@@ -92,17 +97,20 @@ public class FABRIK_IKn : MonoBehaviour
         rawData = new List<IKRawData>();
         shortData = new List<IKShortData>();
         UpdatePositions();
+        calculateTargetAngles();
+        for (int i = 0; i < angles.Length; i++)
+            angles[i] = targetAngles[i];
         
         print($"Total arm length: {totalLength}");
         print($"Initial error: {Vector2.Distance(positions[positions.Length - 1], target.position)}");
-        print("lengths: " + string.Join(", ", lengths));
-        print("joint positions: " + string.Join(", ", System.Array.ConvertAll(joints, j => j.position.ToString())));
+        print($"Lengths: " + string.Join(", ", lengths));
+        print("Joint positions: " + string.Join(", ", System.Array.ConvertAll(joints, j => j.position.ToString())));
+        print("Target angles: " + string.Join(", ", targetAngles.Select(a => a.ToString("F2"))));
+        print("Angles: " + string.Join(", ", angles.Select(a => a.ToString("F2"))));    
     }
 
     void Update()
     {
-        float baseToTargetDistance = Vector2.Distance(positions[0], target.position);
-
         if ((target.position - lastTargetPos).magnitude > tolerance)
         {
             isSolving = true;
@@ -144,16 +152,20 @@ public class FABRIK_IKn : MonoBehaviour
             }
             return;
         }    
-           
-    
-        if (baseToTargetDistance > totalLength)
+        
+        if (!isSolvingAngle)
         {
-            SolveUnreachable();
-            UpdateRotations();
-            isSolving = false; 
+            SolveIKStep();
+            //UpdateRotations();
         }
-        SolveIKStep();
-        UpdateRotations();
+        else if (isSolvingAngle && stepSize == 1f)
+        {
+            UpdateRotations();
+        }
+        else
+        {
+            ApplyAnglesSmooth();
+        }
     }
 
     void UpdateLengths()
@@ -183,6 +195,42 @@ public class FABRIK_IKn : MonoBehaviour
             float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
             joints[i].eulerAngles = new Vector3(0, 0, angle - angleOffset * Mathf.Rad2Deg);
         }
+        
+        isSolvingAngle = false;
+    }
+
+    void calculateTargetAngles()
+    {
+        for (int i = 0; i < joints.Length - 1; i++)
+        {
+            Vector3 dir = positions[i + 1] - positions[i];
+            float angle = Mathf.Atan2(dir.y, dir.x)  * Mathf.Rad2Deg;
+            targetAngles[i] = angle - (angleOffset * Mathf.Rad2Deg);
+        }
+    }
+
+    void ApplyAnglesSmooth() 
+    {
+        bool done = true;
+
+        for (int i = 0; i < joints.Length - 1; i++)
+        {
+            float current = angles[i];
+            float target = targetAngles[i];
+
+            float newAngle = Mathf.LerpAngle(current, target, stepSize);
+
+            joints[i].eulerAngles = new Vector3(0, 0, newAngle);
+
+            angles[i] = newAngle;
+
+            if (Mathf.Abs(Mathf.DeltaAngle(current, target)) > 0.15)
+                done = false;
+            else
+                angles[i] = targetAngles[i];
+        }
+
+        isSolvingAngle = !done;
     }
 
     void SolveUnreachable()
@@ -197,14 +245,25 @@ public class FABRIK_IKn : MonoBehaviour
 
     void SolveIKStep()
     {
+        float baseToTargetDistance = Vector2.Distance(positions[0], target.position);
+
         float error = Vector2.Distance(positions[positions.Length - 1], target.position);
 
+        //UnityEngine.Debug.Log("Test: " + testNum + ", Iteration: " + totalIterations + ", Iteration Time: " + iterationTime + "s, Elapsed Time: " + algorithmTime + "s, Error: " + error);
         rawData.Add(new IKRawData(testNum, totalIterations, iterationTime, algorithmTime, error));
+
+        if (baseToTargetDistance > totalLength)
+        {
+            SolveUnreachable();
+            UpdateRotations();
+            
+            return;
+        }
 
         if (error < tolerance)
         {
             isSolving = false;
-            UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
+            //UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
             shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, error));
             testNum++;
 
@@ -268,6 +327,10 @@ public class FABRIK_IKn : MonoBehaviour
         iterationTime = (float)sw.Elapsed.TotalSeconds;
         algorithmTime += iterationTime;
         totalIterations++;
+
+        calculateTargetAngles(); 
+
+        isSolvingAngle = true;
     }
 
     void SolveFABRIK()

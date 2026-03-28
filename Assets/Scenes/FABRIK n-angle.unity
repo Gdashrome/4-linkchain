@@ -1911,7 +1911,7 @@ MonoBehaviour:
   randomTarget: 0
   maxIterations: 1000
   tolerance: 0.1
-  stepSize: 0.01
+  stepSize: 1
   maxTestNum: 100
   collectData: 0
 --- !u!4 &1386021715

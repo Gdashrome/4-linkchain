@@ -36,7 +36,7 @@ public class JacobianIKn : MonoBehaviour
     public float damping = 2f;
 
     [Header("Data Collection")]
-    [Range(1, 100)]
+    [Range(1, 1000)]
     public int maxTestNum = 1;
     public bool collectData = false;
     
@@ -314,7 +314,7 @@ public class JacobianIKn : MonoBehaviour
         if (error.magnitude < tolerance)
         {
             isSolving = false;
-            UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error.magnitude + ", algorithm time: " + algorithmTime + "s");
+            //UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error.magnitude + ", algorithm time: " + algorithmTime + "s");
             shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, error.magnitude));
             testNum++;
 
@@ -431,7 +431,7 @@ public class JacobianIKn : MonoBehaviour
         totalIterations++;
 
         error = targetPos - current;
-        print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Iteration Time: " + (float)sw.Elapsed.TotalSeconds + ", Total Time: " + algorithmTime + "s");
+        //print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Iteration Time: " + (float)sw.Elapsed.TotalSeconds + ", Total Time: " + algorithmTime + "s");
 
         for (int i = 0; i < angles.Length; i++)
         {
