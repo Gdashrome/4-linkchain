@@ -430,7 +430,7 @@ public class JacobianIKn : MonoBehaviour
         algorithmTime += (float)sw.Elapsed.TotalSeconds;
         iterationTime = (float)sw.Elapsed.TotalSeconds;
         totalIterations++;
-
+        
         for (int i = 0; i < angles.Length; i++)
         {
             targetAngles[i] = angles[i] + delta[i];
