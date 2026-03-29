@@ -301,6 +301,7 @@ public class JacobianIKn : MonoBehaviour
         Vector2 toTarget = targetPos - rootPos;
         float roottoTargetDistance = toTarget.magnitude;
 
+        //UnityEngine.Debug.Log("Test: " + testNum + ", Iteration: " + totalIterations + ", Iteration Time: " + iterationTime + "s, Elapsed Time: " + algorithmTime + "s, Error: " + error.magnitude);
         rawData.Add(new IKRawData(testNum, totalIterations, iterationTime, algorithmTime, error.magnitude));
 
         if (roottoTargetDistance > maxReach)
@@ -429,9 +430,6 @@ public class JacobianIKn : MonoBehaviour
         algorithmTime += (float)sw.Elapsed.TotalSeconds;
         iterationTime = (float)sw.Elapsed.TotalSeconds;
         totalIterations++;
-
-        error = targetPos - current;
-        //print("Iteration " + totalIterations + ", Error: " + error.magnitude + ", Iteration Time: " + (float)sw.Elapsed.TotalSeconds + ", Total Time: " + algorithmTime + "s");
 
         for (int i = 0; i < angles.Length; i++)
         {
