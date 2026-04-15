@@ -2023,10 +2023,11 @@ MonoBehaviour:
   randomOrientation: 0
   randomTarget: 0
   maxIterations: 1000
-  tolerance: 0.1
+  tolerance: 0.00001
   stepSize: 1
-  maxTestNum: 100
+  maxTestNum: 1000
   collectData: 1
+  filenameCustom: Fixed
 --- !u!4 &1386021715
 Transform:
   m_ObjectHideFlags: 0
@@ -2640,7 +2641,7 @@ Transform:
   m_GameObject: {fileID: 1620470781}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 25, y: -15, z: 0}
+  m_LocalPosition: {x: 31.36, y: 23.51, z: 0}
   m_LocalScale: {x: 1.5, y: 1.5, z: 1.5}
   m_ConstrainProportionsScale: 0
   m_Children: []

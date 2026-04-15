@@ -16,17 +16,19 @@ public class FABRIK_IKn : MonoBehaviour
     public bool randomTarget = false;
     public int maxIterations = 20;
 
-    [Range(0.001f, 1f)]
+    [Range(0.00001f, 1f)]
     public float tolerance = 0.1f;
     [Range(0.005f, 1f)]
     public float stepSize = 0.01f;
     
     [Header("Data Collection")]
-    [Range(1, 1000)]
+    [Range(1, 10000)]
     public int maxTestNum = 1;
     public bool collectData = false;
+    public string filenameCustom = "";
     
     int testNum = 1;
+    float initialError = 0f;
 
     float angleOffset = Mathf.PI / 2f;
 
@@ -76,9 +78,7 @@ public class FABRIK_IKn : MonoBehaviour
 
         if (randomTarget)
         {
-            Vector2 randomDir = Random.insideUnitCircle.normalized;
-            float randomDist = Random.Range(0f, totalLength);
-            target.position = (Vector2)joints[0].position + randomDir * randomDist;
+            SetRandomTarget();
         }
 
         UpdatePositions();
@@ -96,11 +96,22 @@ public class FABRIK_IKn : MonoBehaviour
         iterationTime = 0f;
         rawData = new List<IKRawData>();
         shortData = new List<IKShortData>();
+
+        if (randomTarget)
+        {
+            SetRandomTarget();
+        }
+
         UpdatePositions();
         calculateTargetAngles();
         for (int i = 0; i < angles.Length; i++)
             angles[i] = targetAngles[i];
         
+        initialError = Vector2.Distance(positions[positions.Length - 1], target.position);
+        lastTargetPos = target.position;
+
+        isSolving = true;
+
         print($"Total arm length: {totalLength}");
         print($"Initial error: {Vector2.Distance(positions[positions.Length - 1], target.position)}");
         print($"Lengths: " + string.Join(", ", lengths));
@@ -114,9 +125,10 @@ public class FABRIK_IKn : MonoBehaviour
         if ((target.position - lastTargetPos).magnitude > tolerance)
         {
             isSolving = true;
-            lastTargetPos = target.position;
             totalIterations = 0;
             algorithmTime = 0f;
+            initialError = Vector2.Distance(positions[positions.Length - 1], target.position);
+            lastTargetPos = target.position;
         }
 
         if (!isSolving)
@@ -141,13 +153,12 @@ public class FABRIK_IKn : MonoBehaviour
                 }
                 if (randomTarget)
                 {
-                    Vector2 randomDir = Random.insideUnitCircle.normalized;
-                    float randomDist = Random.Range(0f, totalLength);
-                    target.position = (Vector2)joints[0].position + randomDir * randomDist;
+                    SetRandomTarget();
                 }
 
-                lastTargetPos = target.position;
                 UpdatePositions();
+                initialError = Vector2.Distance(positions[positions.Length - 1], target.position);
+                lastTargetPos = target.position;
                 isSolving = true;
             }
             return;
@@ -168,6 +179,20 @@ public class FABRIK_IKn : MonoBehaviour
         }
     }
 
+    void SetRandomTarget()
+    {
+        Vector2 randomDir = Random.insideUnitCircle.normalized;
+        float randomDist = Random.Range(0f*totalLength, 1f*totalLength);
+        target.position = (Vector2)joints[0].position + randomDir * randomDist;
+    }
+    // void SetRandomTarget()
+    // {
+    //     float angle = Random.Range(0f, Mathf.PI * 2f);
+    //     float radius = totalLength * Mathf.Sqrt(Random.value);
+
+    //     Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+    //     target.position = (Vector2)joints[0].position + offset;
+    // }
     void UpdateLengths()
     {
         for (int i = 0; i < lengths.Length; i++)
@@ -263,14 +288,14 @@ public class FABRIK_IKn : MonoBehaviour
         if (error < tolerance)
         {
             isSolving = false;
-            //UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
-            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, error));
+            UnityEngine.Debug.Log("Trial: " + testNum + ", IK Converged in " + totalIterations + " iterations, " + "error: " + error + ", algorithm time: " + algorithmTime + "s");
+            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, initialError, error, target.position, target.position.magnitude));
             testNum++;
 
             if (testNum > maxTestNum && collectData)
             {
-                string rawDataFileNameBase = "FABRIK_IK_RawData";
-                string shortDataFileNameBase = "FABRIK_IK_SummaryData";
+                string rawDataFileNameBase = "FABRIK_RawData";
+                string shortDataFileNameBase = "FABRIK_SummaryData";
                 string rawDataFileNameComponent;
                 string shortDataFileNameComponent;
                 string timestamp = System.DateTime.Now.ToString("(yyyy-MM-dd_HH-mm-ss)");
@@ -296,8 +321,8 @@ public class FABRIK_IKn : MonoBehaviour
                     shortDataFileNameComponent = "(Preset Orientation and Target)";
                 }
                 
-                string rawDataFileName = rawDataFileNameBase + "_" + rawDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
-                string shortDataFileName = shortDataFileNameBase + "_" + shortDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+                string rawDataFileName = filenameCustom + "_" + rawDataFileNameBase + "_" + rawDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+                string shortDataFileName = filenameCustom + "_" + shortDataFileNameBase + "_" + shortDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
 
                 CSVWriter.WriteRawData(rawDataFileName, rawData);
                 CSVWriter.WriteShortData(shortDataFileName, shortData);
@@ -330,7 +355,7 @@ public class FABRIK_IKn : MonoBehaviour
 
         calculateTargetAngles(); 
 
-        isSolvingAngle = true;
+        isSolvingAngle = !collectData;
     }
 
     void SolveFABRIK()

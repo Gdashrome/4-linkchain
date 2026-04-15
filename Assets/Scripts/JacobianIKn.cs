@@ -32,15 +32,17 @@ public class JacobianIKn : MonoBehaviour
     public float tolerance = 0.1f;
     [Range(0.01f, 1f)]
     public float stepSize = 0.01f;
-    [Range(0f, 5f)]
-    public float damping = 2f;
+    [Range(0.001f, 5f)]
+    public float damping = 0.01f;
 
     [Header("Data Collection")]
-    [Range(1, 1000)]
+    [Range(1, 10000)]
     public int maxTestNum = 1;
     public bool collectData = false;
+    public string filenameCustom = "";
     
     int testNum = 1;
+    float initialError = 0f;
 
     float angleOffset = Mathf.PI / 2f;
     bool isSolving = true;
@@ -75,19 +77,17 @@ public class JacobianIKn : MonoBehaviour
         UpdateLengths();
         ReadAnglesFromTransforms();
 
-        if (randomOrientation)
-        {
-            for (int i = 0; i < angles.Length; i++)
-                angles[i] += Random.Range(-Mathf.PI, Mathf.PI);
-            ApplyAnglesToTransforms();
-        }
+        // if (randomOrientation)
+        // {
+        //     for (int i = 0; i < angles.Length; i++)
+        //         angles[i] += Random.Range(-Mathf.PI, Mathf.PI);
+        //     ApplyAnglesToTransforms();
+        // }
 
-        if (randomTarget)
-        {
-            Vector2 randomDir = Random.insideUnitCircle.normalized;
-            float randomDist = Random.Range(0f, maxReach);
-            target.position = (Vector2)joints[0].position + randomDir * randomDist;
-        }
+        // if (randomTarget)
+        // {
+        //     SetRandomTarget();
+        // }
 
         startingAngles = (float[])angles.Clone();
 
@@ -102,14 +102,24 @@ public class JacobianIKn : MonoBehaviour
         maxReach = 0f;
         for (int i = 0; i < lengths.Length; i++)
             maxReach += lengths[i];
-        
+
         SolveIKStep();
         algorithmTime = 0f;
         totalIterations = 0;
         iterationTime = 0f;
         rawData = new List<IKRawData>();
         shortData = new List<IKShortData>();
+
+        if (randomTarget)
+        {
+            SetRandomTarget();
+        }
+
+        lastTargetPos = target.position;
         resetRig();
+        initialError = Vector2.Distance(ForwardKinematics(angles), target.position);
+        
+        isSolving = true;
         
         print("Initial End Effector: " + ForwardKinematics(angles));
         print("Target Position: " + target.position);
@@ -124,10 +134,10 @@ public class JacobianIKn : MonoBehaviour
         if ((currentTarget - lastTargetPos).magnitude > tolerance)
         {
             isSolving = true;
-            lastTargetPos = currentTarget;
-
             algorithmTime = 0f;
             totalIterations = 0;
+            initialError = Vector2.Distance(ForwardKinematics(angles), target.position);
+            lastTargetPos = currentTarget;
         }
 
         if (!isSolving)
@@ -152,13 +162,12 @@ public class JacobianIKn : MonoBehaviour
                 }
                 if (randomTarget)
                 {
-                    Vector2 randomDir = Random.insideUnitCircle.normalized;
-                    float randomDist = Random.Range(0f, maxReach);
-                    target.position = (Vector2)joints[0].position + randomDir * randomDist;
+                    SetRandomTarget();
                 }
 
-                lastTargetPos = target.position;
                 resetRig();
+                initialError = Vector2.Distance(ForwardKinematics(angles), target.position);
+                lastTargetPos = target.position;
                 isSolving = true;
             }
             return;
@@ -177,6 +186,20 @@ public class JacobianIKn : MonoBehaviour
         angles = (float[])startingAngles.Clone();
         ApplyAnglesToTransforms();
     }
+    void SetRandomTarget()
+    {
+        Vector2 randomDir = Random.insideUnitCircle.normalized;
+        float randomDist = Random.Range(0f*maxReach, 1.0f*maxReach);
+        target.position = (Vector2)joints[0].position + randomDir * randomDist;
+    }
+    // void SetRandomTarget()
+    // {
+    //     float angle = Random.Range(0f, Mathf.PI * 2f);
+    //     float radius = maxReach * Mathf.Sqrt(Random.value);
+
+    //     Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+    //     target.position = (Vector2)joints[0].position + offset;
+    // }
     void UpdateLengths()
     {
         for (int i = 0; i < joints.Length; i++)
@@ -315,8 +338,8 @@ public class JacobianIKn : MonoBehaviour
         if (error.magnitude < tolerance)
         {
             isSolving = false;
-            //UnityEngine.Debug.Log("IK Converged in " + totalIterations + " iterations, " + "error: " + error.magnitude + ", algorithm time: " + algorithmTime + "s");
-            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, error.magnitude));
+            UnityEngine.Debug.Log("Trial: " + testNum + ", IK Converged in " + totalIterations + " iterations, " + "error: " + error.magnitude + ", algorithm time: " + algorithmTime + "s");
+            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, initialError, error.magnitude, target.position, target.position.magnitude));
             testNum++;
 
             if (testNum > maxTestNum && collectData)
@@ -379,8 +402,8 @@ public class JacobianIKn : MonoBehaviour
                     shortDataFileNameBase = "JacobianIK_MethodUnknown_SummaryData";
                 }
                 
-                string rawDataFileName = rawDataFileNameBase + "_" + rawDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
-                string shortDataFileName = shortDataFileNameBase + "_" + shortDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+                string rawDataFileName = filenameCustom + "_" + rawDataFileNameBase + "_" + rawDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
+                string shortDataFileName = filenameCustom + "_" + shortDataFileNameBase + "_" + shortDataFileNameComponent + "_" + toleranceStr + "_" + timestamp + ".csv";
 
                 CSVWriter.WriteRawData(rawDataFileName, rawData);
                 CSVWriter.WriteShortData(shortDataFileName, shortData);
@@ -392,6 +415,8 @@ public class JacobianIKn : MonoBehaviour
         {
             isSolving = false;
             UnityEngine.Debug.Log("Max iterations reached (" + maxIterations + "), no convergent solution. Algorithm time: " + algorithmTime + "s");
+            shortData.Add(new IKShortData(testNum, totalIterations, algorithmTime/totalIterations, algorithmTime, initialError, error.magnitude, target.position, target.position.magnitude));
+            testNum++;
             return;
         }
 
@@ -434,7 +459,7 @@ public class JacobianIKn : MonoBehaviour
         for (int i = 0; i < angles.Length; i++)
         {
             targetAngles[i] = angles[i] + delta[i];
-        }  
+        }
 
         isSolvingAngle = true;
     }

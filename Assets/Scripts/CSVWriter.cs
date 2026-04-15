@@ -26,11 +26,11 @@ public static class CSVWriter
         StringBuilder sb = new StringBuilder();
 
         // Header
-        sb.AppendLine("TestNum,Iterations,AvgIterationTime,TotalTime,FinalError");
+        sb.AppendLine("TestNum,Iterations,AvgIterationTime,TotalTime,InitialError,FinalError,TargetX,TargetY,TargetDistanceFromBase");
 
         foreach (var data in dataList)
         {
-            sb.AppendLine($"{data.testNum},{data.iterations},{data.averageIterationTime:F12},{data.totalIterationTime:F12},{data.finalError}");
+            sb.AppendLine($"{data.testNum},{data.iterations},{data.averageIterationTime:F12},{data.totalIterationTime:F12},{data.initialError:F12},{data.finalError:F12},{data.targetPosition.x:F12},{data.targetPosition.y:F12},{data.targetDistanceFromBase:F12}");
         }
 
         WriteToFile(fileName, sb.ToString());
